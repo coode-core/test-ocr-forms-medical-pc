@@ -105,3 +105,24 @@ def test_file_cache_writes_are_atomic_under_concurrent_puts(tmp_path):
         list(pool.map(lambda d: c.put("F1", 1, "m", d, "same"), payloads))
     assert c.get("F1", 1, "m", "same") in payloads  # never a torn file
     assert [p.name for p in (tmp_path / "F1").iterdir()] == ["p1_m_same.json"]  # no temp files left
+
+
+def test_file_cache_put_retries_when_windows_denies_the_rename(tmp_path, monkeypatch):
+    # Windows refuses to replace a file another thread is renaming over or reading (WinError 5).
+    import plan_cuidado.adapters.cache as cache_module
+
+    real_replace = cache_module.os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(5, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(cache_module.os, "replace", flaky_replace)
+    monkeypatch.setattr(cache_module.time, "sleep", lambda _s: None)
+    c = FileOcrCache(tmp_path)
+    c.put("F1", 1, "m", {"ok": True})
+    assert c.get("F1", 1, "m") == {"ok": True}
+    assert [p.name for p in (tmp_path / "F1").iterdir()] == ["p1_m.json"]

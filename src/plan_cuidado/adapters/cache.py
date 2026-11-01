@@ -7,6 +7,8 @@ import os
 import re
 import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 
@@ -15,8 +17,12 @@ def _safe(text: str) -> str:
 
 
 class FileOcrCache:
+    REPLACE_ATTEMPTS = 10
+    REPLACE_BACKOFF_SECONDS = 0.05
+
     def __init__(self, base_dir: Path):
         self.base_dir = base_dir
+        self._replace_lock = threading.Lock()
 
     def _path(self, file_id: str, page: int, model: str, variant: str) -> Path:
         suffix = f"_{_safe(variant)}" if variant else ""
@@ -39,10 +45,22 @@ class FileOcrCache:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(json.dumps(data, ensure_ascii=False))
-            os.replace(tmp, path)
+            self._replace(tmp, path)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)
             raise
+
+    def _replace(self, tmp: str, path: Path) -> None:
+        # Windows denies the rename (WinError 5) while another thread renames over or reads the same file.
+        with self._replace_lock:
+            for attempt in range(self.REPLACE_ATTEMPTS):
+                try:
+                    os.replace(tmp, path)
+                    return
+                except PermissionError:
+                    if attempt == self.REPLACE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(self.REPLACE_BACKOFF_SECONDS * (attempt + 1))
 
     def clear(self, file_id: str) -> int:
         """Delete every cached response of one Drive file; returns how many were removed."""
