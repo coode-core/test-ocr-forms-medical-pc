@@ -1,0 +1,43 @@
+# Secrets
+.env
+.env.*
+!.env.example
+credentials.json
+client_secret*.json
+token.json
+workspace.json
+
+# Patient data: scanned planillas (including template/) must never be committed
+*.pdf
+*.jpg
+*.jpeg
+*.png
+ocr_cache/
+browser_profile/
+truth*.json
+!config/ocr_truth.example.json
+
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.codegraph/
+.DS_Store
+*.log
+
+# Local agent / editor tooling (not part of the project)
+.atl/
+.claude/
+.idea/
+.vscode/
+
+# Patient data: sample planillas used while developing
+template/
+
+# Local runtime data (token, cache, logs, bench truth) - never commit
+local_data/

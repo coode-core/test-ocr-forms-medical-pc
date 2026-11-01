@@ -1,0 +1,199 @@
+# Planilla (OCR) -> Google Form question mapping.
+# Question keys come from `pc schema` (slug of each question title).
+# Normalizers: text | digits | date | choice | raw
+# Rules: phone | numeric | ficha | iso_date
+
+# OCR cells below this confidence are left empty and flagged for review. Only applies to responses
+# cached before the OCR stopped asking for a per-cell confidence (it never caught the wrong digits).
+confidence_threshold: 0.75
+# Minimum rapidfuzz score (0-100) to accept a fuzzy option match (barrio, etc.).
+fuzzy_threshold: 85
+# Expected shape of "CODIGO DE FICHA".
+ficha_pattern: "^02020\\d+$"
+# If more than this fraction of mapped cells on a page is flagged, retry the page
+# with OCR_FALLBACK_MODEL.
+cascade_flag_ratio: 0.3
+
+# Abbreviations written on the planilla -> text that identifies the form option.
+choice_aliases:
+  PPT: PTT        # the form option says "(PTT)"
+  PT: PTT         # "PT" is how the planillas usually write it
+  PEP: PTT
+  PA: PASAPORTE
+  PAS: PASAPORTE
+  NV: REGISTRO NACIDO VIVO
+  CN: REGISTRO NACIDO VIVO
+
+# Table columns of the planilla.
+ocr_columns:
+  fecha_plan:
+    # Open question: "FECHA DE VISITA" = "fecha plan de cuidado" of the planilla.
+    target: fecha_de_visita
+    normalizer: date
+  nombre:
+    target: nombre_del_usuario
+    normalizer: text
+  tipo_doc:
+    target: tipo_de_documento_de_identificacion
+    normalizer: choice
+  numero_documento:
+    # Open question: Q5 "DOCUMENTO" = patient document number (same value).
+    targets: [numero_de_documento_de_identidad, documento]
+    normalizer: digits
+    rule: numeric
+  ficha:
+    target: codigo_de_ficha
+    normalizer: digits
+    rule: ficha
+  direccion:
+    target: direccion_de_la_vivienda
+    normalizer: text
+  telefono:
+    target: telefono
+    normalizer: digits
+    rule: phone
+  comuna:
+    target: comuna_corregimiento
+    normalizer: choice
+  barrio:
+    target: barrio
+    normalizer: choice
+  territorio:
+    target: codigo_del_territorio
+    normalizer: choice
+  microterritorio:
+    target: microterritorio
+    normalizer: choice
+
+# Page header of the planilla (applies to every row of the page).
+header:
+  ebs:
+    target: equipo_basico_en_salud
+    normalizer: choice
+  colaborador:
+    # Open question: the doctor (Q4) comes from the "Datos fijos" tab by default.
+    # Set enabled: true to take it from the planilla header instead.
+    target: nombre_del_medico_que_atiende_al_paciente
+    normalizer: choice
+    enabled: false
+
+# Format rules checked by `pc validate` (also for manually typed values).
+rules:
+  telefono: phone
+  numero_de_documento_de_identidad: numeric
+  documento: numeric
+  codigo_de_ficha: ficha
+  fecha_de_visita: iso_date
+  fecha_de_nacimiento: iso_date
+  fecha_de_canalizacion: iso_date
+
+# Conditional logic between questions.
+conditionals:
+  - when: {field: cuenta_con_alguna_discapacidad, not_equals: "SI"}
+    default: {field: en_caso_de_ser_si_la_respuesta_especifique_cual, value: "NO APLICA"}
+  - when: {field: eps_actual, equals: "OTRA"}
+    require: [cual]
+  - when: {field: requiere_canalizacion_alguna_especialidad, not_equals: "SI"}
+    default: {field: servicio_al_que_debe_canalizar, value: "NO APLICA"}
+
+# Derived fields computed by `pc fill-static`.
+derived:
+  territory_code: codigo_del_territorio
+  territory_name: nombre_del_territorio
+  birth_date: fecha_de_nacimiento
+  reference_date: fecha_de_visita
+  age: edad
+  life_course: curso_de_vida
+
+# A row is a duplicate when all these values match an existing row.
+dedupe_keys: [numero_de_documento_de_identidad, fecha_de_visita]
+
+# How each page is read by the OCR.
+ocr:
+  # 1 call for the page header (low resolution), then the patient table is split into
+  # `strips` overlapping horizontal strips, each sent at up to `strip_max_side` pixels,
+  # so every row is seen at a higher resolution than in a whole-page call.
+  # The header call also locates the table (column titles row, left/right borders, last row): strips are
+  # cropped to the table width and the column titles are pasted on top of each strip.
+  locate_table: true
+  strips: 3
+  # Pages read at the same time (all pages of a file, and the next files); OCR_PAGE_WORKERS in .env
+  # overrides it. The tracker and Drive are still written one file at a time, in order.
+  page_workers: 4
+  # Cap on OpenRouter requests in flight for the whole run (pages x strips x consensus models).
+  max_concurrent_requests: 16
+  strip_overlap: 0.15          # fraction of a strip shared with its neighbour
+  table_top: 0.15              # fallback table area (fractions of the page height) if it cannot be located
+  table_bottom: 0.95
+  render_scale: 4.0            # PDF render scale before cropping (4.0 ~ 290 dpi)
+  strip_max_side: 2400
+  header_max_side: 1600
+  # Printed rows per sheet ("No." 1-25). Row numbers that no strip reported are re-read
+  # one by one; if still unread a NEEDS_REVIEW row "fila no leída" is added to the tracker.
+  expected_rows: 25
+  requery_missing: true
+  # Extra models that read the same page; critical cells where they disagree with the main
+  # model (OCR_MODEL) are painted purple and keep the value most readers agree on.
+  # OCR_CONSENSUS_MODEL in .env adds more (comma-separated) and is on by default (pc setup writes
+  # the recommended pair); OCR_CONSENSUS_MODEL=no plus an empty list = a single model.
+  consensus_models: []
+  # The consensus models read only the critical columns (about 1/3 of the output tokens), on the
+  # main model's rotation and table crop, with their rows realigned on the main model's rows.
+  consensus_critical_only: true
+  # Family members ("NÚMERO DE INTEGRANTE" 2, 3...) share the family's ficha: a member's ficha that no
+  # earlier row of the page has (and an earlier ficha one digit away from it) is painted purple.
+  household_check: true
+  member_column: integrante
+  # OpenRouter routing per model (Zero Data Retention is always enforced by the program).
+  # "flex" = same Gemini model at half price, ~20 s per request instead of ~5 s (with OpenRouter
+  # fallbacks allowed it was billed at the standard price, hence `only`); if the route fails the
+  # program retries with the default routing. sort: price = cheapest ZDR provider of that model.
+  providers:
+    google/gemini-3.1-flash-lite:
+      only: [google-vertex/global/flex]
+    qwen/qwen3-vl-235b-a22b-instruct:
+      sort: price
+  critical_fields:
+    - numero_de_documento_de_identidad
+    - documento
+    - codigo_de_ficha
+    - telefono
+    - fecha_de_visita
+    - tipo_de_documento_de_identificacion
+
+# Fallback answers used by `pc fill-static` for cells that are still empty. A value written in the
+# "Datos fijos" tab of the tracker wins over these. Option questions must use the exact form option.
+static_defaults:
+  # Same for every patient of this team.
+  querido_contratista_es_importante_que_recuerde_que_la: ACEPTO
+  tipo_de_visita: PRIMERA VISITA
+  nombre_del_medico_que_atiende_al_paciente: DIEGO ARMANDO ORJUELA DIAZ   # TODO: the real doctor
+  confirmacion_adres: "SI"
+  lugar_de_expedicion_del_documento: SOACHA
+  regimen_de_salud: 2. SUBSIDIADO
+  eps_actual: FAMISANAR
+  cuenta_con_alguna_discapacidad: "NO"
+  etnia: NINGUNO
+  poblacion_de_especial_atencion: 11.NO APLICA
+  hallazgos_relevantes_identificados_en_la_familia: Sin hallazgos relevantes.
+  educacion_brindada_a_la_familia: Educación en hábitos de vida saludable y signos de alarma.
+  compromisos_adquiridos_con_la_familia: Asistir a controles y aplicar las recomendaciones.
+  requiere_canalizacion_alguna_especialidad: "NO"
+  durante_la_valoracion_se_realizo_tamizaje_de_riesgo: NO APLICA
+  segun_la_valoracion_la_persona_se_clasifica_con: NO APLICA
+  segun_la_clasifiacion_del_riesgo_la_persona_requiere: NO APLICA
+  la_persona_fue_canalizada_a_los_servicios_de_salud_para: NO APLICA
+  tipo_de_canalizacion: NO APLICA
+  se_realizo_un_plan_de_manejo_clinico: "SI"
+  se_brindaron_recomendaciones_clinicas_estilos_de_vida: "SI"
+  durante_la_valoracion_se_realizo_educacion_en_salud_de: "SI"
+  aplico_post_test_posterior_a_la_educacion_en_salud: "NO"
+  el_paciente_demuestra_conocimiento_para_el_cuidado_de_su: "SI"
+  aplica_proxima_visita_de_seguimiento: SI APLICA SEGUIMIENTO
+  la_canalizacion_fue_efectiva_aplica_solo_si_es_seguimiento: NO APLICA
+  por_resolucion_3280_que_historia_clinica_se_le_va_a_generar: Historia clínica de valoración integral según curso de vida.
+  # TEST ONLY: per-patient data that is not on the planilla. Replace them with each patient's real
+  # data in the tracker (or delete these lines) before sending to the real form.
+  fecha_de_nacimiento: "1990-01-01"
+  sexo: 2.MUJER
+  fecha_de_canalizacion: "2026-10-30"

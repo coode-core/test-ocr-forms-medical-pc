@@ -1,0 +1,23 @@
+{
+  "_nota": "Ejemplo con datos ficticios. Transcriba a mano UNA página real y guárdela FUERA del repositorio, en la carpeta de datos: macOS ~/Library/Application Support/plan-cuidado/bench/truth-<nombre>.json, Windows %LOCALAPPDATA%\\plan-cuidado\\bench\\truth-<nombre>.json. 'row' es el número impreso en la columna No. Los nombres de columnas son los del OCR (src/plan_cuidado/domain/ocr.py). 'uncertain' es solo una nota para usted.",
+  "page": 1,
+  "header": {"ebs": "02", "colaborador": "NOMBRE APELLIDO"},
+  "rows": [
+    {
+      "row": 1,
+      "fecha_plan": "06-08-26",
+      "nombre": "PACIENTE DE EJEMPLO UNO",
+      "tipo_doc": "CC",
+      "numero_documento": "1000000001",
+      "ficha": "0202000001",
+      "integrante": "1",
+      "direccion": "KR 1 # 2-3",
+      "telefono": "3000000001",
+      "comuna": "1",
+      "barrio": "CIUDAD LATINA I",
+      "territorio": "02",
+      "microterritorio": "04"
+    }
+  ],
+  "uncertain": ["r01.telefono?"]
+}

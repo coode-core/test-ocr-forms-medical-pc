@@ -1,0 +1,44 @@
+[project]
+name = "plan-cuidado"
+version = "0.1.0"
+description = "Pipeline: planillas escaneadas de Plan de Cuidado -> Google Sheet -> Google Form"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "google-api-python-client>=2.130",
+    "google-auth-oauthlib>=1.2",
+    "google-auth>=2.30",
+    "gspread>=6.1",
+    "pypdfium2>=4.30",
+    "Pillow>=10.3",
+    "rapidfuzz>=3.9",
+    "platformdirs>=4.2",
+    "python-dotenv>=1.0",
+    "openai>=1.40",
+    "pyyaml>=6.0",
+    "playwright>=1.45",
+]
+
+[project.scripts]
+pc = "plan_cuidado.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-mock>=3.14",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/plan_cuidado"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Launcher for macOS/Linux: ./pc <command>
+export PYTHONUTF8=1
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR" || exit 1
+PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+exec uv run --quiet pc "$@"
